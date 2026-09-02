@@ -9,71 +9,42 @@ sitting right after Regex + Text Extraction.
 """
 
 import pandas as pd
-import joblib
 from sklearn.model_selection import train_test_split
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.naive_bayes import MultinomialNB
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import classification_report, accuracy_score
 from sklearn.pipeline import Pipeline
+from sklearn.metrics import classification_report, accuracy_score
+import joblib
 
-# 1. Load data (in production this comes from your regex-parsed notification data
-#    stored via Firebase Firestore / Room local DB, exported to CSV)
-df = pd.read_csv("sample_transactions_large.csv")
-print(f"Loaded {len(df)} labeled transactions across {df['category'].nunique()} categories")
-print(df['category'].value_counts(), "\n")
+# 1. Read file and explicitly split columns by comma
+df = pd.read_csv("financial_transaction_test.csv", header=None)
 
+# Column 0 is the description/merchant text, Column 1 is the category
+df['merchant_text'] = df[0].str.strip()
+df['category'] = df[1].str.strip()
+
+# 2. Define features (X) and target (y)
 X = df["merchant_text"]
 y = df["category"]
 
+# 3. Split data for training and testing (stratify removed to prevent rare category crashes)
 X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.2, random_state=42, stratify=y
+    X, y, test_size=0.2, random_state=42
 )
 
-# 2. Build pipeline: TF-IDF -> Classifier
-#    Naive Bayes works well for short text with small datasets like this.
-#    RandomForest is included as an alternative/comparison (also used in your Lit Review, Paper 2).
-pipelines = {
-    "naive_bayes": Pipeline([
-        ("tfidf", TfidfVectorizer(ngram_range=(1, 2), min_df=1)),
-        ("clf", MultinomialNB())
-    ]),
-    "random_forest": Pipeline([
-        ("tfidf", TfidfVectorizer(ngram_range=(1, 2), min_df=1)),
-        ("clf", RandomForestClassifier(n_estimators=200, random_state=42))
-    ]),
-}
+# 4. Build and train the text classification pipeline
+model_pipeline = Pipeline([
+    ('tfidf', TfidfVectorizer(stop_words='english', ngram_range=(1, 2))),
+    ('classifier', MultinomialNB())
+])
 
-best_model = None
-best_score = 0
-best_name = None
+print("Training model...")
+model_pipeline.fit(X_train, y_train)
 
-for name, pipe in pipelines.items():
-    pipe.fit(X_train, y_train)
-    preds = pipe.predict(X_test)
-    acc = accuracy_score(y_test, preds)
-    print(f"=== {name} ===")
-    print(f"Accuracy: {acc:.2f}")
-    print(classification_report(y_test, preds, zero_division=0))
-    if acc >= best_score:
-        best_score = acc
-        best_model = pipe
-        best_name = name
+# 5. Evaluate and save the trained model
+y_pred = model_pipeline.predict(X_test)
+print(f"Accuracy: {accuracy_score(y_test, y_pred):.4f}")
+print(classification_report(y_test, y_pred))
 
-print(f"Best model: {best_name} (accuracy: {best_score:.2f})")
-
-# 3. Save the winning model
-joblib.dump(best_model, "expense_category_model.joblib")
-print("Saved model -> expense_category_model.joblib")
-
-# 4. Demo: classify a few brand-new, unseen transaction strings
-sample_new = [
-    "Blinkit Grocery Delivery",
-    "SBI Life Insurance Premium",
-    "Uber Eats Order",
-    "Vodafone Idea Recharge",
-]
-predictions = best_model.predict(sample_new)
-print("\n--- Live predictions on unseen text ---")
-for text, pred in zip(sample_new, predictions):
-    print(f"{text:35s} -> {pred}")
+joblib.dump(model_pipeline, "transaction_categorizer.pkl")
+print("Model trained and successfully saved as 'transaction_categorizer.pkl'!")
