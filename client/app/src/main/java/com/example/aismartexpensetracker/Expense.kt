@@ -9,5 +9,7 @@ data class Expense(
     val id: Int = 0,
     val amount: String,
     val merchant: String,
-    val date: Long = System.currentTimeMillis()
+    val date: Long = System.currentTimeMillis(),
+    val category: String = "Uncategorized",
+    val isAnomaly: Boolean = false
 )

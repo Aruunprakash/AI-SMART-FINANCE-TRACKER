@@ -31,19 +31,20 @@ class ExpenseNotificationListener : NotificationListenerService() {
             Log.d("ExpenseListener", "Detected Expense: Amount = ${parsedExpense.amount}, Merchant = ${parsedExpense.merchant}")
 
             val currentTime = System.currentTimeMillis()
-            
-
-            // 2. Local Storage: Save to Room Database
             val database = AppDatabase.getDatabase(applicationContext)
-            val roomExpense = Expense(
-                amount = parsedExpense.amount.toString(),
-                merchant = parsedExpense.merchant,
-                date = currentTime
-            )
 
+            // 2. Save locally AND run it through the same categorize + anomaly
+            //    pipeline the manual "+" button uses (ExpenseRepository).
+            //    This is what makes notification capture fully automatic --
+            //    no manual reading or entry needed once this service is
+            //    enabled for the device's payment/bank apps.
             CoroutineScope(Dispatchers.IO).launch {
-                database.expenseDao().insertExpense(roomExpense)
-                Log.d("ExpenseListener", "Saved to Room Database!")
+                ExpenseRepository.captureExpense(
+                    dao = database.expenseDao(),
+                    merchant = parsedExpense.merchant,
+                    amount = parsedExpense.amount
+                )
+                Log.d("ExpenseListener", "Captured, saved, and categorized automatically")
             }
 
             // 3. Backend & Security: Check Firebase Auth before cloud sync
@@ -56,7 +57,6 @@ class ExpenseNotificationListener : NotificationListenerService() {
                     "date" to currentTime
                 )
 
-                // Sync to user's private firestore collection
                 firestore.collection("users")
                     .document(currentUser.uid)
                     .collection("expenses")
