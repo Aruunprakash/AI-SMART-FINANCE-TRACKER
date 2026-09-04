@@ -1,15 +1,23 @@
+# ---- IDEs ----
+.idea/
+.vs/
 *.iml
-.gradle
-/local.properties
-/.idea/caches
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
-.DS_Store
-/build
-/captures
+
+# ---- Android / Gradle (client/) ----
+.gradle/
+build/
+captures/
+local.properties
 .externalNativeBuild
 .cxx
-local.properties
+
+# ---- Python (server/, model/) ----
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# ---- OS ----
+.DS_Store
+Thumbs.db

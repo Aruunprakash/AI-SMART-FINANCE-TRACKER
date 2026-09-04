@@ -1,0 +1,8 @@
+# Dependencies for the training scripts in model/training/.
+# Use a Python 3.11 or 3.12 virtual environment -- these versions have no
+# wheels for Python 3.14.
+pandas==2.2.2
+numpy==1.26.4
+scikit-learn==1.5.2
+joblib==1.4.2
+matplotlib==3.8.4    # optional: confusion matrix PNG (CSV is written regardless)

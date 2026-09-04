@@ -6,11 +6,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -18,131 +17,187 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import com.example.aismartexpensetracker.Expense
+import com.example.aismartexpensetracker.ExpenseViewModel
+import java.text.SimpleDateFormat
+import java.util.Locale
 
 private val DashPurpleDark = Color(0xFF3C3489)
 private val DashPurpleMid = Color(0xFF534AB7)
 private val DashBgGray = Color(0xFFF7F6FA)
 private val DashTextSecondary = Color(0xFF757575)
-private val DashGreen = Color(0xFF1D9E75)
 private val DashRed = Color(0xFFD32F2F)
 private val DashTrackGray = Color(0xFFE0DDE8)
 
-data class RecentTxn(
-    val merchant: String,
-    val icon: String,
-    val amount: Int,
-    val isDebit: Boolean,
-    val time: String
-)
+// Placeholder until the budgets table lands (P2). Displayed as a target, not
+// as data the app has measured.
+private const val MONTHLY_BUDGET_TARGET = 25000.0
 
 @Composable
-fun DashboardScreen(navController: NavController? = null) {
-    val totalExpenses = 18400
-    val monthlyBudget = 25000
-    val remaining = monthlyBudget - totalExpenses
-    val percentUsed = (totalExpenses.toFloat() / monthlyBudget).coerceIn(0f, 1f)
+fun DashboardScreen(
+    navController: NavController? = null,
+    viewModel: ExpenseViewModel = viewModel()
+) {
+    val expenses by viewModel.expenses.collectAsState()
+    val isCategorizing by viewModel.isCategorizing.collectAsState()
+    var showAddDialog by remember { mutableStateOf(false) }
 
-    val recentTransactions = listOf(
-        RecentTxn("Swiggy Bangalore", "🍔", 420, true, "Today, 9:14 PM"),
-        RecentTxn("Salary Credit", "💰", 45000, false, "Yesterday, 10:00 AM"),
-        RecentTxn("BigBasket", "🛒", 1230, true, "Yesterday, 6:40 PM"),
-        RecentTxn("Uber Trip", "🚕", 260, true, "2 days ago, 8:05 AM")
-    )
+    // ---- Derived from actual Room data ----
+    val totalSpent = expenses.sumOf { it.amount.toDoubleOrNull() ?: 0.0 }
+    val remaining = MONTHLY_BUDGET_TARGET - totalSpent
+    val percentUsed = (totalSpent / MONTHLY_BUDGET_TARGET).coerceIn(0.0, 1.0).toFloat()
+    val categoryTotals = expenses
+        .groupBy { it.category }
+        .mapValues { (_, list) -> list.sumOf { it.amount.toDoubleOrNull() ?: 0.0 } }
+        .entries.sortedByDescending { it.value }
+        .take(4)
+    val recent = expenses.take(5)
+    val anomalyCount = expenses.count { it.isAnomaly }
+    val dateFormat = remember { SimpleDateFormat("MMM d, h:mm a", Locale.getDefault()) }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(DashBgGray)
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp)
-    ) {
-        // Top bar with title and back-to-menu button
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+    Box(Modifier.fillMaxSize()) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .background(DashBgGray)
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp)
         ) {
-            Text(
-                "Dashboard",
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Bold,
-                color = DashPurpleDark
-            )
-            if (navController != null) {
-                Button(onClick = { navController.navigate("menu") }) {
-                    Text("Go to Menu")
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Dashboard", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = DashPurpleDark)
+                if (navController != null) {
+                    TextButton(onClick = { navController.navigate("menu") }) { Text("Menu") }
                 }
             }
-        }
 
-        Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(16.dp))
 
-        // ---- Total expenses + monthly budget card ----
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(18.dp)) {
-                Text("Total spent this month", fontSize = 13.sp, color = DashTextSecondary)
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    "₹$totalExpenses",
-                    fontSize = 28.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = DashPurpleDark
-                )
-                Spacer(Modifier.height(12.dp))
-
-                LinearProgressIndicator(
-                    progress = percentUsed,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(8.dp)
-                        .clip(RoundedCornerShape(4.dp)),
-                    color = if (percentUsed >= 0.9f) DashRed else DashPurpleMid,
-                    trackColor = DashTrackGray
-                )
-                Spacer(Modifier.height(8.dp))
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text("Budget: ₹$monthlyBudget", fontSize = 12.sp, color = DashTextSecondary)
-                    Text("₹$remaining left", fontSize = 12.sp, color = DashTextSecondary)
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(18.dp)) {
+                    Text("Total spent", fontSize = 13.sp, color = DashTextSecondary)
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "₹${"%,.0f".format(totalSpent)}",
+                        fontSize = 28.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = DashPurpleDark
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    LinearProgressIndicator(
+                        progress = percentUsed,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(8.dp)
+                            .clip(RoundedCornerShape(4.dp)),
+                        color = if (percentUsed >= 0.9f) DashRed else DashPurpleMid,
+                        trackColor = DashTrackGray
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(
+                            "Target: ₹${"%,.0f".format(MONTHLY_BUDGET_TARGET)}",
+                            fontSize = 12.sp,
+                            color = DashTextSecondary
+                        )
+                        Text(
+                            "₹${"%,.0f".format(remaining)} left",
+                            fontSize = 12.sp,
+                            color = DashTextSecondary
+                        )
+                    }
                 }
             }
+
+            Spacer(Modifier.height(16.dp))
+
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                SummaryCard(Modifier.weight(1f), "Transactions", expenses.size.toString(), "📋")
+                SummaryCard(Modifier.weight(1f), "Flagged unusual", anomalyCount.toString(), "⚠️")
+            }
+
+            Spacer(Modifier.height(20.dp))
+
+            Text("Spend by category", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = DashPurpleDark)
+            Spacer(Modifier.height(12.dp))
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp)) {
+                    if (categoryTotals.isEmpty()) {
+                        Text("No expenses yet — tap + to add one", fontSize = 12.sp, color = DashTextSecondary)
+                    } else {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            categoryTotals.forEach { (category, amount) ->
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Box(
+                                        Modifier
+                                            .size(38.dp)
+                                            .clip(CircleShape)
+                                            .background(DashBgGray),
+                                        contentAlignment = Alignment.Center
+                                    ) { Text(emojiFor(category), fontSize = 16.sp) }
+                                    Spacer(Modifier.height(4.dp))
+                                    Text(category, fontSize = 10.sp, color = DashTextSecondary)
+                                    Text(
+                                        "₹${"%,.0f".format(amount)}",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = DashPurpleDark
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(20.dp))
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Recent transactions", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = DashPurpleDark)
+                if (isCategorizing) {
+                    Spacer(Modifier.width(8.dp))
+                    CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+
+            if (recent.isEmpty()) {
+                Text("Nothing logged yet", fontSize = 12.sp, color = DashTextSecondary)
+            } else {
+                recent.forEach { expense ->
+                    RecentExpenseRow(expense, dateFormat.format(expense.date))
+                    Spacer(Modifier.height(10.dp))
+                }
+            }
+
+            Spacer(Modifier.height(80.dp)) // room for the FAB
         }
 
-        Spacer(Modifier.height(16.dp))
-
-        // ---- Quick summary row ----
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            SummaryCard(
-                modifier = Modifier.weight(1f),
-                label = "Transactions",
-                value = recentTransactions.size.toString(),
-                icon = "📋"
-            )
-            SummaryCard(
-                modifier = Modifier.weight(1f),
-                label = "Days left",
-                value = "12",
-                icon = "📅"
-            )
+        FloatingActionButton(
+            onClick = { showAddDialog = true },
+            containerColor = DashPurpleMid,
+            contentColor = Color.White,
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(20.dp)
+        ) {
+            Icon(Icons.Filled.Add, contentDescription = "Add expense")
         }
+    }
 
-        Spacer(Modifier.height(24.dp))
-
-        Text(
-            "Recent transactions",
-            fontSize = 16.sp,
-            fontWeight = FontWeight.Bold,
-            color = DashPurpleDark
+    if (showAddDialog) {
+        AddExpenseDialog(
+            onDismiss = { showAddDialog = false },
+            onConfirm = { merchant, amount ->
+                viewModel.addExpense(merchant, amount)
+                showAddDialog = false
+            }
         )
-        Spacer(Modifier.height(12.dp))
-
-        recentTransactions.forEach { txn ->
-            RecentTxnRow(txn)
-            Spacer(Modifier.height(10.dp))
-        }
     }
 }
 
@@ -159,8 +214,8 @@ private fun SummaryCard(modifier: Modifier = Modifier, label: String, value: Str
 }
 
 @Composable
-private fun RecentTxnRow(txn: RecentTxn) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+private fun RecentExpenseRow(expense: Expense, formattedDate: String) {
+    Card(Modifier.fillMaxWidth()) {
         Row(
             Modifier
                 .fillMaxWidth()
@@ -175,21 +230,63 @@ private fun RecentTxnRow(txn: RecentTxn) {
                         .clip(CircleShape)
                         .background(DashBgGray),
                     contentAlignment = Alignment.Center
-                ) {
-                    Text(txn.icon, fontSize = 16.sp)
-                }
+                ) { Text(emojiFor(expense.category), fontSize = 16.sp) }
                 Spacer(Modifier.width(12.dp))
                 Column {
-                    Text(txn.merchant, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                    Text(txn.time, fontSize = 11.sp, color = DashTextSecondary)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(expense.merchant, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        if (expense.isAnomaly) {
+                            Spacer(Modifier.width(6.dp))
+                            Text("UNUSUAL", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = DashRed)
+                        }
+                    }
+                    Text("${expense.category} · $formattedDate", fontSize = 11.sp, color = DashTextSecondary)
                 }
             }
             Text(
-                (if (txn.isDebit) "-₹" else "+₹") + txn.amount,
+                "-₹${expense.amount}",
                 fontWeight = FontWeight.Bold,
                 fontSize = 14.sp,
-                color = if (txn.isDebit) DashRed else DashGreen
+                color = DashRed
             )
         }
     }
+}
+
+@Composable
+private fun AddExpenseDialog(onDismiss: () -> Unit, onConfirm: (String, Double) -> Unit) {
+    var merchant by remember { mutableStateOf("") }
+    var amountText by remember { mutableStateOf("") }
+    val amountValue = amountText.toDoubleOrNull()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add expense") },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = merchant,
+                    onValueChange = { merchant = it },
+                    label = { Text("Merchant (e.g. Swiggy Order)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = amountText,
+                    onValueChange = { amountText = it },
+                    label = { Text("Amount (₹)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(merchant, amountValue ?: 0.0) },
+                enabled = merchant.isNotBlank() && amountValue != null && amountValue > 0
+            ) { Text("Add") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
 }

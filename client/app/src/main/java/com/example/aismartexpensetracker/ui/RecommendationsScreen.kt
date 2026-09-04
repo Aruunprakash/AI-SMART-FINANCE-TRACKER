@@ -32,18 +32,14 @@ private val RecDangerText = Color(0xFFD32F2F)
 private val RecGoodBg = Color(0xFFEAF3DE)
 private val RecGoodText = Color(0xFF3B6D11)
 
-private enum class Tone { GOOD, WARNING, DANGER, NEUTRAL }
-
 data class Recommendation(
     val icon: String,
     val title: String,
     val message: String,
-    val tone: TonePublic
+    val tone: Tone
 )
 
-// Public-facing tone enum so callers outside this file (if ever needed)
-// don't have to reference the private Tone type.
-enum class TonePublic { GOOD, WARNING, DANGER, NEUTRAL }
+enum class Tone { GOOD, WARNING, DANGER, NEUTRAL }
 
 @Composable
 fun RecommendationsScreen() {
@@ -54,27 +50,27 @@ fun RecommendationsScreen() {
         Recommendation(
             "🛍️", "Shopping is over budget",
             "You've spent ₹540 more than your Shopping limit this month. Consider pausing non-essential purchases.",
-            TonePublic.DANGER
+            Tone.DANGER
         ),
         Recommendation(
             "🧾", "Bills nearing the limit",
             "You're at 98% of your Bills budget. One more payment could push you over.",
-            TonePublic.WARNING
+            Tone.WARNING
         ),
         Recommendation(
             "🍔", "Food spending is up 12%",
             "Your Food expenses this month are higher than your 3-month average. A few home-cooked days could help.",
-            TonePublic.WARNING
+            Tone.WARNING
         ),
         Recommendation(
             "🚕", "Travel is under control",
             "You're comfortably within your Travel budget — ₹900 left with 5 days remaining in the month.",
-            TonePublic.GOOD
+            Tone.GOOD
         ),
         Recommendation(
             "💡", "Try the 50/30/20 rule",
             "Based on your income pattern, allocating 50% to needs, 30% to wants, and 20% to savings could improve your monthly balance.",
-            TonePublic.NEUTRAL
+            Tone.NEUTRAL
         )
     )
 
@@ -109,10 +105,10 @@ fun RecommendationsScreen() {
 @Composable
 private fun RecommendationCard(item: Recommendation) {
     val (bg, textColor) = when (item.tone) {
-        TonePublic.GOOD -> RecGoodBg to RecGoodText
-        TonePublic.WARNING -> RecWarningBg to RecWarningText
-        TonePublic.DANGER -> RecDangerBg to RecDangerText
-        TonePublic.NEUTRAL -> Color(0xFFEEEDFE) to RecPurpleMid
+        Tone.GOOD -> RecGoodBg to RecGoodText
+        Tone.WARNING -> RecWarningBg to RecWarningText
+        Tone.DANGER -> RecDangerBg to RecDangerText
+        Tone.NEUTRAL -> Color(0xFFEEEDFE) to RecPurpleMid
     }
 
     Card(modifier = Modifier.fillMaxWidth()) {

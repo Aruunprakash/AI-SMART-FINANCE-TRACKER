@@ -1,3 +1,4 @@
+import json
 import random
 import pandas as pd
 import joblib
@@ -8,6 +9,10 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import classification_report, accuracy_score
 from sklearn.pipeline import Pipeline
+
+from sklearn.metrics import confusion_matrix
+
+from paths import ARTIFACTS, EVALUATION, PROCESSED, RAW, require
 
 random.seed(42)
 
@@ -95,11 +100,11 @@ synthetic_df = pd.DataFrame(synthetic_rows)
 # =====================================================================
 # STEP 2: Combine with the real hand-labeled data
 # =====================================================================
-real_df = pd.read_csv("sample_transactions.csv")
+real_df = pd.read_csv(require(RAW / "sample_transactions.csv"))
 
 combined_df = pd.concat([real_df, synthetic_df], ignore_index=True)
 combined_df = combined_df.sample(frac=1, random_state=42).reset_index(drop=True)
-combined_df.to_csv("sample_transactions_large.csv", index=False)
+combined_df.to_csv(PROCESSED / "sample_transactions_large.csv", index=False)
 
 print(f"Real rows: {len(real_df)} | Synthetic rows: {len(synthetic_df)} | Combined: {len(combined_df)}")
 print(combined_df['category'].value_counts(), "\n")
@@ -167,8 +172,76 @@ print(f"Best model: {best_name} (real-data test accuracy: {best_score:.2f})")
 # =====================================================================
 # STEP 5: Save the winning model
 # =====================================================================
-joblib.dump(best_model, "expense_category_model.joblib")
-print("Saved model -> expense_category_model.joblib")
+joblib.dump(best_model, ARTIFACTS / "expense_category_model.joblib")
+print(f"Saved model -> {ARTIFACTS / 'expense_category_model.joblib'}")
+
+# =====================================================================
+# STEP 5b: Evaluation artifacts (implementation plan section 8)
+#   Confusion matrix + per-class precision/recall/F1, computed on the
+#   held-out REAL rows only.
+# =====================================================================
+y_pred_best = best_model.predict(X_test)
+labels = sorted(real_df["category"].unique())
+
+cm = confusion_matrix(y_test, y_pred_best, labels=labels)
+cm_df = pd.DataFrame(cm, index=[f"true_{c}" for c in labels], columns=[f"pred_{c}" for c in labels])
+cm_df.to_csv(EVALUATION / "categorizer_confusion_matrix.csv")
+
+report_text = classification_report(y_test, y_pred_best, zero_division=0)
+report_dict = classification_report(y_test, y_pred_best, zero_division=0, output_dict=True)
+
+with open(EVALUATION / "categorizer_report.txt", "w") as f:
+    f.write(f"Best model: {best_name}\n")
+    f.write(f"Trained on {len(train_df)} rows ({len(real_train)} real + {len(synthetic_df)} synthetic)\n")
+    f.write(f"Tested on {len(real_test)} held-out REAL rows\n\n")
+    f.write(report_text)
+    f.write("\n\nConfusion matrix\n")
+    f.write(cm_df.to_string())
+
+with open(EVALUATION / "categorizer_metrics.json", "w") as f:
+    json.dump(
+        {
+            "best_model": best_name,
+            "train_rows": int(len(train_df)),
+            "real_train_rows": int(len(real_train)),
+            "synthetic_rows": int(len(synthetic_df)),
+            "test_rows_real_heldout": int(len(real_test)),
+            "accuracy": round(float(best_score), 4),
+            "macro_f1": round(float(report_dict["macro avg"]["f1-score"]), 4),
+            "weighted_f1": round(float(report_dict["weighted avg"]["f1-score"]), 4),
+            "caveat": (
+                "Test set is only the held-out portion of 54 hand-labelled rows. "
+                "Small-sample accuracy: report the count alongside the percentage."
+            ),
+        },
+        f,
+        indent=2,
+    )
+
+# Optional chart -- skipped silently if matplotlib isn't installed.
+try:
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots(figsize=(7, 6))
+    ax.imshow(cm, cmap="Blues")
+    ax.set_xticks(range(len(labels)), labels, rotation=45, ha="right")
+    ax.set_yticks(range(len(labels)), labels)
+    ax.set_xlabel("Predicted")
+    ax.set_ylabel("Actual")
+    ax.set_title(f"Categorizer confusion matrix ({best_name})")
+    for i in range(len(labels)):
+        for j in range(len(labels)):
+            ax.text(j, i, cm[i, j], ha="center", va="center", fontsize=9)
+    fig.tight_layout()
+    fig.savefig(EVALUATION / "categorizer_confusion_matrix.png", dpi=150)
+    plt.close(fig)
+    print(f"Saved chart -> {EVALUATION / 'categorizer_confusion_matrix.png'}")
+except ImportError:
+    print("matplotlib not installed - skipped confusion matrix PNG (CSV still written)")
+
+print(f"Saved evaluation -> {EVALUATION}")
 
 # =====================================================================
 # STEP 6: Demo on brand-new, unseen transaction strings

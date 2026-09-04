@@ -9,11 +9,14 @@ Literature Review (Paper 5), and supports the Human-in-the-Loop feature
 in your Proposed System.
 """
 
+import joblib
 import pandas as pd
 from sklearn.ensemble import IsolationForest
 
+from paths import ARTIFACTS, PROCESSED, require
+
 # 1. Load the same transaction dataset used for categorization
-df = pd.read_csv("sample_transactions_large.csv")
+df = pd.read_csv(require(PROCESSED / "sample_transactions_large.csv"))
 print(f"Loaded {len(df)} transactions\n")
 
 # 2. Train an Isolation Forest on the amount column
@@ -31,8 +34,13 @@ print(anomalies[["merchant_text", "amount", "category"]].to_string(index=False))
 
 # 4. Save results (in production, these get pushed to the app as alerts
 #    for the user to confirm/dismiss -- this is the Human-in-the-Loop step)
-df.to_csv("transactions_with_anomaly_flags.csv", index=False)
-print("\nSaved full results -> transactions_with_anomaly_flags.csv")
+df.to_csv(PROCESSED / "transactions_with_anomaly_flags.csv", index=False)
+print(f"\nSaved full results -> {PROCESSED / 'transactions_with_anomaly_flags.csv'}")
+
+# Persist the detector. It was never saved before, which is why the server had
+# to train its own copy in train_server_models.py.
+joblib.dump(model, ARTIFACTS / "anomaly_model.joblib")
+print(f"Saved model        -> {ARTIFACTS / 'anomaly_model.joblib'}")
 
 # 5. Demo: check a few new transactions against the trained model
 new_transactions = pd.DataFrame({
