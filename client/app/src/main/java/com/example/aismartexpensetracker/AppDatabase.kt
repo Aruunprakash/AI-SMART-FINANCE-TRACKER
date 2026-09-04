@@ -5,7 +5,10 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 
-@Database(entities = [Expense::class], version = 1, exportSchema = false)
+// version bumped to 2 for the new `category` / `isAnomaly` columns.
+// fallbackToDestructiveMigration() wipes local data on upgrade -- fine while
+// still in development; replace with a real Migration before shipping.
+@Database(entities = [Expense::class], version = 2, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun expenseDao(): ExpenseDao
 
@@ -19,7 +22,9 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "expense_database"
-                ).build()
+                )
+                    .fallbackToDestructiveMigration()
+                    .build()
                 INSTANCE = instance
                 instance
             }
