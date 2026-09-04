@@ -1,0 +1,10 @@
+# Trained models are generated output -- regenerate them with the scripts
+# in model/training/ rather than committing binaries.
+#
+# The artifacts previously committed here were saved with scikit-learn
+# 0.24 and no longer load on scikit-learn 1.x. They remain recoverable
+# from git history if ever needed:
+#   git checkout 77c2fd1 -- model/artifacts/final_expense_model.pkl
+*.pkl
+*.joblib
+!.gitignore

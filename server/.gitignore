@@ -1,0 +1,10 @@
+# Trained models are generated output -- regenerate with:
+#   python train_server_models.py
+models/*.joblib
+models/*.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
