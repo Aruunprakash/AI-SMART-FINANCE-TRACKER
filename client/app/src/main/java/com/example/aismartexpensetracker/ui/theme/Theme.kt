@@ -40,8 +40,10 @@ private val LightColorScheme = lightColorScheme(
 @Composable
 fun AISMARTEXPENSETRACKERTheme(
         darkTheme: Boolean = isSystemInDarkTheme(),
-        // Dynamic color is available on Android 12+
-        dynamicColor: Boolean = true,
+        // Off by default: on Android 12+ dynamic color derives the palette from
+        // the user's wallpaper, which would discard the app's purple branding
+        // on the demo device.
+        dynamicColor: Boolean = false,
         content: @Composable () -> Unit
 ) {
     val colorScheme = when {

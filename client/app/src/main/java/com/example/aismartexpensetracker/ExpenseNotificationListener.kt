@@ -11,6 +11,43 @@ import kotlinx.coroutines.launch
 
 class ExpenseNotificationListener : NotificationListenerService() {
 
+    companion object {
+        private const val TAG = "ExpenseListener"
+
+        /**
+         * Only notifications from these apps are parsed.
+         *
+         * Without this filter every notification on the device is scanned, so a
+         * chat message containing "₹500" becomes a logged expense. Section 4.1
+         * of the implementation plan requires this allowlist.
+         *
+         * Messaging apps are included deliberately: in India most bank alerts
+         * arrive as SMS and surface through the default Messages app rather
+         * than a bank app. ExpenseParser requires a transaction verb, which is
+         * what keeps ordinary SMS out.
+         */
+        val PAYMENT_APP_PACKAGES = setOf(
+            // UPI apps
+            "com.google.android.apps.nbu.paisa.user",  // Google Pay (India)
+            "com.phonepe.app",
+            "net.one97.paytm",
+            "in.org.npci.upiapp",                      // BHIM
+            "in.amazon.mShop.android.shopping",        // Amazon Pay
+            // Messaging apps (bank SMS alerts)
+            "com.google.android.apps.messaging",
+            "com.samsung.android.messaging",
+            "com.android.mms",
+            // Bank apps
+            "com.snapwork.hdfc",                       // HDFC
+            "com.csam.icici.bank.imobile",             // ICICI iMobile
+            "com.sbi.lotusintouch",                    // SBI YONO
+            "com.sbi.SBIFreedomPlus",
+            "com.msf.kbank.mobile",                    // Kotak
+            "com.axis.mobile",                         // Axis
+            "com.bankofbaroda.mconnect"
+        )
+    }
+
     private val firestore by lazy { FirebaseFirestore.getInstance() }
     private val auth by lazy { FirebaseAuth.getInstance() }
 
@@ -18,58 +55,70 @@ class ExpenseNotificationListener : NotificationListenerService() {
         super.onNotificationPosted(sbn)
 
         val packageName = sbn?.packageName ?: return
+        if (packageName !in PAYMENT_APP_PACKAGES) return
+
         val extras = sbn.notification?.extras ?: return
+        val title = extras.getString("android.title").orEmpty()
+        // Long bank SMS get truncated in android.text; bigText has the full body.
+        val body = extras.getString("android.bigText")
+            ?: extras.getString("android.text").orEmpty()
+        val fullText = "$title $body"
 
-        val title = extras.getString("android.title") ?: ""
-        val text = extras.getString("android.text") ?: ""
-        val fullText = "$title $text"
+        // 1. Text extraction & parsing (regex / rule-based)
+        val parsed = ExpenseParser.parse(fullText) ?: return
 
-        // 1. Text Extraction & Parsing (Regex / Rule-based)
-        val parsedExpense = ExpenseParser.parse(fullText)
+        // This is an expense tracker: money going out. Credits (salary, refunds)
+        // are recognised by the parser but not stored as expenses, otherwise a
+        // salary credit would inflate the spending total.
+        if (parsed.type != "debit") {
+            Log.d(TAG, "Ignoring ${parsed.type} of ${parsed.amount} from $packageName")
+            return
+        }
 
-        if (parsedExpense != null) {
-            Log.d("ExpenseListener", "Detected Expense: Amount = ${parsedExpense.amount}, Merchant = ${parsedExpense.merchant}")
+        Log.d(TAG, "Detected expense: ${parsed.amount} at ${parsed.merchant} (from $packageName)")
 
-            val currentTime = System.currentTimeMillis()
-            val database = AppDatabase.getDatabase(applicationContext)
+        // 2. Save locally and enrich, exactly as the manual "+" button does.
+        val dao = AppDatabase.getDatabase(applicationContext).expenseDao()
+        CoroutineScope(Dispatchers.IO).launch {
+            ExpenseRepository.captureExpense(
+                dao = dao,
+                merchant = parsed.merchant,
+                amount = parsed.amount
+            )
+            syncToFirestore(parsed)
+        }
+    }
 
-            // 2. Save locally AND run it through the same categorize + anomaly
-            //    pipeline the manual "+" button uses (ExpenseRepository).
-            //    This is what makes notification capture fully automatic --
-            //    no manual reading or entry needed once this service is
-            //    enabled for the device's payment/bank apps.
-            CoroutineScope(Dispatchers.IO).launch {
-                ExpenseRepository.captureExpense(
-                    dao = database.expenseDao(),
-                    merchant = parsedExpense.merchant,
-                    amount = parsedExpense.amount
-                )
-                Log.d("ExpenseListener", "Captured, saved, and categorized automatically")
-            }
-
-            // 3. Backend & Security: Check Firebase Auth before cloud sync
+    /**
+     * Best-effort cloud sync. Every Firebase call is guarded because Firebase
+     * throws if it was never initialised (missing or misconfigured
+     * google-services.json), and losing cloud sync must never cost us the
+     * locally captured transaction.
+     */
+    private fun syncToFirestore(parsed: ParsedExpense) {
+        try {
             val currentUser = auth.currentUser
-            if (currentUser != null) {
-                val firestoreData = hashMapOf(
-                    "userId" to currentUser.uid,
-                    "amount" to parsedExpense.amount,
-                    "merchant" to parsedExpense.merchant,
-                    "date" to currentTime
-                )
-
-                firestore.collection("users")
-                    .document(currentUser.uid)
-                    .collection("expenses")
-                    .add(firestoreData)
-                    .addOnSuccessListener {
-                        Log.d("ExpenseListener", "Successfully synced to Firebase Firestore!")
-                    }
-                    .addOnFailureListener { e ->
-                        Log.e("ExpenseListener", "Error syncing to Firebase", e)
-                    }
-            } else {
-                Log.w("ExpenseListener", "User not logged in. Saved locally to Room only.")
+            if (currentUser == null) {
+                Log.i(TAG, "Not signed in; transaction saved locally only.")
+                return
             }
+
+            val data = hashMapOf(
+                "userId" to currentUser.uid,
+                "amount" to parsed.amount,
+                "merchant" to parsed.merchant,
+                "type" to parsed.type,
+                "date" to System.currentTimeMillis()
+            )
+
+            firestore.collection("users")
+                .document(currentUser.uid)
+                .collection("expenses")
+                .add(data)
+                .addOnSuccessListener { Log.d(TAG, "Synced to Firestore") }
+                .addOnFailureListener { e -> Log.e(TAG, "Firestore sync failed", e) }
+        } catch (e: Exception) {
+            Log.w(TAG, "Firebase unavailable; transaction saved locally only (${e.message})")
         }
     }
 }

@@ -32,8 +32,8 @@ database/
 | `raw/Daily Household Transactions.csv` | 2,461 | `predict_expense.py` | Household expense records; source for the monthly expense forecaster |
 | `raw/sample_transactions.csv` | 54 | `train_categorization_model_final.py` | Hand-labeled merchant text → category, across 10 categories |
 | `raw/Personal_Finance_Dataset.csv` | 1,500 | *(unused)* | Personal finance transactions; not currently referenced by any script |
-| `upi_transactions/financial_transaction_train.csv` | 10,000 | `train_categorization_model1.py` | Labeled UPI transaction text — the largest real labeled dataset here |
-| `upi_transactions/financial_transaction_test.csv` | 1,000 | — | Held-out split of the above |
+| `upi_transactions/financial_transaction_train.csv` | 10,000 | *(unused - see warning)* | Synthetic UPI text, 5 labels. Only **29 distinct templates** repeated ~345x each |
+| `upi_transactions/financial_transaction_test.csv` | 1,000 | *(unused)* | Drawn from the same 29 templates - not a genuine held-out set |
 | `processed/sample_transactions_large.csv` | 654 | `anomaly_detection.py` | Real + synthetic rows, written by `train_categorization_model_final.py` |
 | `processed/transactions_with_anomaly_flags.csv` | 654 | — | Output of `anomaly_detection.py` |
 | `processed/*expenses*.csv`, `processed/*results*.csv` | — | — | Aggregation / evaluation output |
@@ -42,11 +42,23 @@ database/
 
 - **`processed/` is generated.** Everything in it is reproducible by re-running the
   scripts in `model/training/`. Only `raw/` and `upi_transactions/` are source data.
-- **`financial_transaction_train.csv` is the most valuable dataset here** and is
-  currently underused — the categorizer trains on 54 real rows while 10,000 labeled
-  rows sit unused. Its text column packs three fields into one string:
-  `Swiggy order payment | Ref:0f8f77bb | Amount: INR 37090.45`. Split on `|` and keep
-  the first segment before vectorizing, or TF-IDF will learn from reference hashes
-  and amount digits.
+- **Do not train on `upi_transactions/`.** It looks like 10,000 labelled rows,
+  but stripping the `| Ref:... | Amount:...` suffix leaves only **29 unique
+  merchant strings**, each repeated ~345 times, with a perfectly deterministic
+  template-to-label mapping. Any train/test split shares the same 29 templates,
+  so a classifier trained on it scores near 100% while having memorised a
+  29-entry lookup table. The 1,000-row "test" file has the same problem. It also
+  carries only 5 labels (Food, Travel, Shopping, Investment, EMI) against the
+  app's 10 categories.
+
+  Verify this yourself:
+  `python -c "import csv,collections;rows=list(csv.DictReader(open('database/upi_transactions/financial_transaction_train.csv')));print(len(set(r['Transaction_Text'].split('|')[0].strip() for r in rows)))"`
+
+- **`raw/sample_transactions.csv` (54 rows) remains the only genuine labelled
+  data.** It is small, and that is the honest limitation to state in the report --
+  the real held-out test set is ~17 rows. Augmenting it with synthetic brand
+  variations (as `train_categorization_model_final.py` does) while testing only
+  on held-out real rows is the correct approach given that constraint.
+
 - CSVs are stored via **Git LFS** (see `.gitattributes`). Run `git lfs pull` after
   cloning if the files look like short text pointers.
